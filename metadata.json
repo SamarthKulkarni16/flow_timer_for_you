@@ -1,0 +1,6 @@
+{
+  "name": "Flow Timer",
+  "description": "An ultra-minimalist, high-performance, low-latency countdown timer designed for locked immersion and a deep flow state.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
