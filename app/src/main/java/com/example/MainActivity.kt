@@ -75,7 +75,8 @@ data class SessionRecord(
     val totalAllocatedDurationMillis: Long,
     val targetTasksCount: Int,
     val taskDurationsCsv: String, // durations in Milliseconds of each task completed, separated by commas
-    val totalActualDurationMillis: Long
+    val totalActualDurationMillis: Long,
+    val taskName: String = "task"
 ) {
     fun getTaskDurationsList(): List<Long> {
         if (taskDurationsCsv.isEmpty()) return emptyList()
@@ -98,7 +99,7 @@ interface SessionDao {
     suspend fun insertSession(session: SessionRecord)
 }
 
-@Database(entities = [SessionRecord::class], version = 1, exportSchema = false)
+@Database(entities = [SessionRecord::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
 
@@ -112,7 +113,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "flow_timer_database"
-                ).build()
+                )
+                .fallbackToDestructiveMigration()
+                .build()
                 INSTANCE = instance
                 instance
             }
@@ -310,7 +313,8 @@ class FlowTimerViewModel(private val repository: SessionRepository) : ViewModel(
             totalAllocatedDurationMillis = totalDurationSeconds * 1000L,
             targetTasksCount = totalTasksCount,
             taskDurationsCsv = SessionRecord.createCsv(taskRealDurations),
-            totalActualDurationMillis = System.currentTimeMillis() - sessionStartTimeMillis
+            totalActualDurationMillis = System.currentTimeMillis() - sessionStartTimeMillis,
+            taskName = activeTaskName
         )
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -764,12 +768,51 @@ fun TimerScreen(viewModel: FlowTimerViewModel) {
     }
 }
 
+fun formatDetailedDuration(millis: Long): String {
+    val totalSeconds = (millis / 1000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) {
+        String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format(Locale.US, "%02d:%02d", minutes, seconds)
+    }
+}
+
+@Composable
+fun HistoryDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = Color.Gray,
+            fontSize = 14.sp,
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Normal
+        )
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 14.sp,
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.End
+        )
+    }
+}
+
 @Composable
 fun HistoryScreen(
     sessions: List<SessionRecord>,
     onBack: () -> Unit
 ) {
-    val dateSdf = remember { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US) }
+    var expandedSessionId by remember { mutableStateOf<Long?>(null) }
 
     Column(
         modifier = Modifier
@@ -827,22 +870,31 @@ fun HistoryScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(sessions) { session ->
-                    val dateFormatted = try {
-                        dateSdf.format(Date(session.startTimeMillis))
+                    val isExpanded = expandedSessionId == session.id
+
+                    val dateOnlyFormatted = try {
+                        SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(session.startTimeMillis))
                     } catch (e: Exception) {
                         "date unknown"
                     }
 
-                    val totalAllocatedMin = session.totalAllocatedDurationMillis / 60000L
-                    val totalAllocatedSec = (session.totalAllocatedDurationMillis % 60000L) / 1000L
-                    val allocatedString = String.format(Locale.US, "%02d:%02d", totalAllocatedMin, totalAllocatedSec)
+                    val startTimeFormatted = try {
+                        SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(session.startTimeMillis))
+                    } catch (e: Exception) {
+                        "N/A"
+                    }
 
-                    val actualMin = session.totalActualDurationMillis / 60000L
-                    val actualSec = (session.totalActualDurationMillis % 60000L) / 1000L
-                    val actualString = String.format(Locale.US, "%02d:%02d", actualMin, actualSec)
+                    val endTimeFormatted = try {
+                        SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(session.startTimeMillis + session.totalActualDurationMillis))
+                    } catch (e: Exception) {
+                        "N/A"
+                    }
+
+                    val actualDurationStr = formatDetailedDuration(session.totalActualDurationMillis)
+                    val allocatedDurationStr = formatDetailedDuration(session.totalAllocatedDurationMillis)
 
                     Column(
                         modifier = Modifier
@@ -850,72 +902,99 @@ fun HistoryScreen(
                             .testTag("history_session_item")
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    expandedSessionId = if (isExpanded) null else session.id
+                                }
+                                .padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = dateFormatted,
+                                text = session.taskName.ifEmpty { "task" },
                                 color = Color.White,
-                                fontSize = 16.sp,
+                                fontSize = 18.sp,
                                 fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Normal
+                                fontWeight = FontWeight.Medium
                             )
-                            Text(
-                                text = "target: $allocatedString",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Normal
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = actualDurationStr,
+                                    color = Color.LightGray,
+                                    fontSize = 16.sp,
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontWeight = FontWeight.Light,
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text(
+                                    text = if (isExpanded) "▲" else "▼",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.SansSerif
+                                )
+                            }
+                        }
+
+                        if (isExpanded) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF111111))
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                HistoryDetailRow("Name", session.taskName.ifEmpty { "task" })
+                                HistoryDetailRow("Duration", actualDurationStr)
+                                HistoryDetailRow("Number of tasks", session.targetTasksCount.toString())
+                                HistoryDetailRow("Estimated time", allocatedDurationStr)
+                                HistoryDetailRow("Actual time", actualDurationStr)
+                                HistoryDetailRow("Date", dateOnlyFormatted)
+                                HistoryDetailRow("Time when task started", startTimeFormatted)
+                                HistoryDetailRow("Time when task ended", endTimeFormatted)
+
+                                val splits = session.getTaskDurationsList()
+                                if (splits.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "task splits",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontFamily = FontFamily.SansSerif,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    splits.forEachIndexed { idx, duration ->
+                                        val sec = duration / 1000L
+                                        val msPercent = (duration % 1000L) / 10L
+                                        val splitFormatted = "${sec}.${String.format(Locale.US, "%02d", msPercent)}s"
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "  Task ${idx + 1}",
+                                                color = Color.Gray,
+                                                fontSize = 13.sp,
+                                                fontFamily = FontFamily.SansSerif
+                                            )
+                                            Text(
+                                                text = splitFormatted,
+                                                color = Color.LightGray,
+                                                fontSize = 13.sp,
+                                                fontFamily = FontFamily.SansSerif
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
 
                         Spacer(modifier = Modifier.height(4.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "actual: $actualString",
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Light
-                            )
-                            Text(
-                                text = "tasks: ${session.targetTasksCount}",
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Light
-                            )
-                        }
-
-                        // Display splits of each completed task
-                        val splits = session.getTaskDurationsList()
-                        if (splits.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            val splitsBuilder = StringBuilder()
-                            splits.forEachIndexed { idx, rawDuration ->
-                                val duration = rawDuration.coerceAtLeast(0L)
-                                val sec = duration / 1000L
-                                val msPercent = (duration % 1000L) / 10L
-                                splitsBuilder.append("${idx + 1}: ${sec}.${String.format(Locale.US, "%02d", msPercent)}s")
-                                if (idx < splits.size - 1) {
-                                    splitsBuilder.append("  |  ")
-                                }
-                            }
-                            Text(
-                                text = splitsBuilder.toString(),
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Light,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
 
                         // Custom 1dp thin white separation line between history list items
                         Box(
