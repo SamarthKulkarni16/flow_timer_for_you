@@ -3,6 +3,7 @@ plugins {
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
+  alias(libs.plugins.kotlin.serialization)
 }
 
 import java.util.Properties
@@ -83,6 +84,7 @@ dependencies {
   implementation(platform(libs.supabase.bom))
   implementation(libs.supabase.postgrest)
   implementation(libs.supabase.auth)
+  implementation(libs.kotlinx.serialization.json)
   implementation(libs.ktor.client.android)
   implementation(libs.androidx.credentials)
   implementation(libs.androidx.credentials.play.services.auth)

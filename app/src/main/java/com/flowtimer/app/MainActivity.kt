@@ -48,6 +48,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.room.*
@@ -68,7 +69,7 @@ import java.util.*
 // 1. DATA LAYER (ROOM ROOM SETUP & MODELS)
 // ==========================================
 
-@Entity(tableName = "session_records")
+@Entity(tableName = "session_records", indices = [Index(value = ["remoteId"], unique = true)])
 data class SessionRecord(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val startTimeMillis: Long,
@@ -76,7 +77,12 @@ data class SessionRecord(
     val targetTasksCount: Int,
     val taskDurationsCsv: String, // durations in Milliseconds of each task completed, separated by commas
     val totalActualDurationMillis: Long,
-    val taskName: String = "task"
+    val taskName: String = "task",
+    // Stable id shared with the Supabase row for this session, so sync never
+    // creates duplicates. Generated locally at creation time (not autoincrement).
+    val remoteId: String = UUID.randomUUID().toString(),
+    // True once this row has been pushed to (or pulled from) the cloud.
+    val synced: Boolean = false
 ) {
     fun getTaskDurationsList(): List<Long> {
         if (taskDurationsCsv.isEmpty()) return emptyList()
@@ -97,9 +103,24 @@ interface SessionDao {
 
     @Insert
     suspend fun insertSession(session: SessionRecord)
+
+    // Used when pulling sessions down from the cloud. IGNORE means a session
+    // that already exists locally (same remoteId) is silently skipped instead
+    // of crashing on the unique index.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertFromRemote(sessions: List<SessionRecord>)
+
+    @Query("SELECT * FROM session_records WHERE synced = 0")
+    suspend fun getUnsyncedSessions(): List<SessionRecord>
+
+    @Query("UPDATE session_records SET synced = 1 WHERE remoteId = :remoteId")
+    suspend fun markSynced(remoteId: String)
+
+    @Query("SELECT remoteId FROM session_records")
+    suspend fun getAllRemoteIds(): List<String>
 }
 
-@Database(entities = [SessionRecord::class], version = 2, exportSchema = false)
+@Database(entities = [SessionRecord::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
 
@@ -129,6 +150,14 @@ class SessionRepository(private val sessionDao: SessionDao) {
     suspend fun insertSession(session: SessionRecord) {
         sessionDao.insertSession(session)
     }
+
+    suspend fun getUnsyncedSessions(): List<SessionRecord> = sessionDao.getUnsyncedSessions()
+
+    suspend fun markSynced(remoteId: String) = sessionDao.markSynced(remoteId)
+
+    suspend fun getAllRemoteIds(): List<String> = sessionDao.getAllRemoteIds()
+
+    suspend fun insertFromRemote(sessions: List<SessionRecord>) = sessionDao.insertFromRemote(sessions)
 }
 
 // ==========================================
@@ -178,7 +207,10 @@ enum class AppScreen {
     Auth
 }
 
-class FlowTimerViewModel(private val repository: SessionRepository) : ViewModel() {
+class FlowTimerViewModel(
+    private val repository: SessionRepository,
+    private val syncRepository: com.flowtimer.app.data.SyncRepository? = null
+) : ViewModel() {
 
     var currentScreen by mutableStateOf(AppScreen.Home)
         private set
@@ -320,6 +352,8 @@ class FlowTimerViewModel(private val repository: SessionRepository) : ViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             repository.insertSession(record)
+            // Best-effort push; SyncRepository silently no-ops if signed out or offline.
+            syncRepository?.pushLocalChanges()
         }
 
         viewModelScope.launch {
@@ -359,11 +393,14 @@ class FlowTimerViewModel(private val repository: SessionRepository) : ViewModel(
     }
 }
 
-class FlowTimerViewModelFactory(private val repository: SessionRepository) : ViewModelProvider.Factory {
+class FlowTimerViewModelFactory(
+    private val repository: SessionRepository,
+    private val syncRepository: com.flowtimer.app.data.SyncRepository? = null
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(FlowTimerViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return FlowTimerViewModel(repository) as T
+            return FlowTimerViewModel(repository, syncRepository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
@@ -1072,11 +1109,12 @@ class MainActivity : ComponentActivity() {
         // Initialize local database database and repository
         val database = AppDatabase.getDatabase(applicationContext)
         val repository = SessionRepository(database.sessionDao())
+        val syncRepository = com.flowtimer.app.data.SyncRepository(repository)
 
         // Initialize Viewmodel with Factory
         val viewModel = ViewModelProvider(
             this,
-            FlowTimerViewModelFactory(repository)
+            FlowTimerViewModelFactory(repository, syncRepository)
         )[FlowTimerViewModel::class.java]
 
         val authViewModel = ViewModelProvider(
@@ -1086,6 +1124,17 @@ class MainActivity : ComponentActivity() {
 
         val prefs = getSharedPreferences("flow_timer_prefs", Context.MODE_PRIVATE)
         val showAuthPromptOnLaunch = !prefs.getBoolean("auth_prompt_shown", false)
+
+        // Whenever the user is (or becomes) signed in - app launch, fresh sign-in,
+        // token refresh - catch up in both directions: push anything saved locally
+        // while signed out, and pull down sessions saved from other devices.
+        lifecycleScope.launch {
+            authViewModel.sessionStatus.collect { status ->
+                if (status is io.github.jan.supabase.auth.SessionStatus.Authenticated) {
+                    syncRepository.syncAll()
+                }
+            }
+        }
 
         setContent {
             MyApplicationTheme {
