@@ -26,7 +26,8 @@ class GreetingScreenshotTest {
         HomeScreen(
           timerText = "00:00",
           onStartClicked = {},
-          onTripleTap = {}
+          onTripleTap = {},
+          onAccountClicked = {}
         )
       }
     }

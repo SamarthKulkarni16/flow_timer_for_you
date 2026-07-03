@@ -174,7 +174,8 @@ enum class AppScreen {
     Home,
     Setup,
     Timer,
-    History
+    History,
+    Auth
 }
 
 class FlowTimerViewModel(private val repository: SessionRepository) : ViewModel() {
@@ -373,9 +374,21 @@ class FlowTimerViewModelFactory(private val repository: SessionRepository) : Vie
 // ==========================================
 
 @Composable
-fun FlowTimerApp(viewModel: FlowTimerViewModel) {
+fun FlowTimerApp(
+    viewModel: FlowTimerViewModel,
+    authViewModel: com.flowtimer.app.data.AuthViewModel,
+    showAuthPromptOnLaunch: Boolean,
+    onAuthPromptShown: () -> Unit
+) {
     val context = LocalContext.current
     val activity = context as? Activity
+
+    LaunchedEffect(Unit) {
+        if (showAuthPromptOnLaunch && !authViewModel.isSignedIn()) {
+            viewModel.navigateTo(AppScreen.Auth)
+        }
+        onAuthPromptShown()
+    }
 
     // Global back handling
     BackHandler {
@@ -383,6 +396,7 @@ fun FlowTimerApp(viewModel: FlowTimerViewModel) {
             AppScreen.Setup -> viewModel.navigateTo(AppScreen.Home)
             AppScreen.Timer -> viewModel.navigateTo(AppScreen.Home)
             AppScreen.History -> viewModel.navigateTo(AppScreen.Home)
+            AppScreen.Auth -> viewModel.navigateTo(AppScreen.Home)
             AppScreen.Home -> activity?.finish()
         }
     }
@@ -396,7 +410,8 @@ fun FlowTimerApp(viewModel: FlowTimerViewModel) {
             AppScreen.Home -> HomeScreen(
                 timerText = "00:00",
                 onStartClicked = { viewModel.navigateTo(AppScreen.Setup) },
-                onTripleTap = { viewModel.navigateTo(AppScreen.History) }
+                onTripleTap = { viewModel.navigateTo(AppScreen.History) },
+                onAccountClicked = { viewModel.navigateTo(AppScreen.Auth) }
             )
             AppScreen.Setup -> SetupScreen(
                 taskName = viewModel.taskNameInput,
@@ -415,6 +430,11 @@ fun FlowTimerApp(viewModel: FlowTimerViewModel) {
                     onBack = { viewModel.navigateTo(AppScreen.Home) }
                 )
             }
+            AppScreen.Auth -> com.flowtimer.app.ui.auth.AuthScreen(
+                viewModel = authViewModel,
+                onSkip = { viewModel.navigateTo(AppScreen.Home) },
+                onBack = { viewModel.navigateTo(AppScreen.Home) }
+            )
         }
     }
 }
@@ -423,35 +443,37 @@ fun FlowTimerApp(viewModel: FlowTimerViewModel) {
 fun HomeScreen(
     timerText: String,
     onStartClicked: () -> Unit,
-    onTripleTap: () -> Unit
+    onTripleTap: () -> Unit,
+    onAccountClicked: () -> Unit
 ) {
     var lastTapTime by remember { mutableLongStateOf(0L) }
     var tapCount by remember { mutableIntStateOf(0) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = {
-                        val currentTime = System.currentTimeMillis()
-                        if (currentTime - lastTapTime < 450L) {
-                            tapCount++
-                            if (tapCount >= 3) {
-                                tapCount = 0
-                                onTripleTap()
-                             }
-                        } else {
-                            tapCount = 1
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = {
+                            val currentTime = System.currentTimeMillis()
+                            if (currentTime - lastTapTime < 450L) {
+                                tapCount++
+                                if (tapCount >= 3) {
+                                    tapCount = 0
+                                    onTripleTap()
+                                 }
+                            } else {
+                                tapCount = 1
+                            }
+                            lastTapTime = currentTime
                         }
-                        lastTapTime = currentTime
-                    }
-                )
-            }
-            .windowInsetsPadding(WindowInsets.safeDrawing),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
+                    )
+                }
+                .windowInsetsPadding(WindowInsets.safeDrawing),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier.size(280.dp)
@@ -492,6 +514,26 @@ fun HomeScreen(
                     onStartClicked()
                 }
                 .padding(24.dp)
+        )
+        }
+
+        Text(
+            text = "account",
+            color = Color.DarkGray,
+            fontSize = 14.sp,
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Light,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .testTag("account_button")
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    onAccountClicked()
+                }
+                .padding(20.dp)
         )
     }
 }
@@ -1037,9 +1079,24 @@ class MainActivity : ComponentActivity() {
             FlowTimerViewModelFactory(repository)
         )[FlowTimerViewModel::class.java]
 
+        val authViewModel = ViewModelProvider(
+            this,
+            com.flowtimer.app.data.AuthViewModelFactory()
+        )[com.flowtimer.app.data.AuthViewModel::class.java]
+
+        val prefs = getSharedPreferences("flow_timer_prefs", Context.MODE_PRIVATE)
+        val showAuthPromptOnLaunch = !prefs.getBoolean("auth_prompt_shown", false)
+
         setContent {
             MyApplicationTheme {
-                FlowTimerApp(viewModel = viewModel)
+                FlowTimerApp(
+                    viewModel = viewModel,
+                    authViewModel = authViewModel,
+                    showAuthPromptOnLaunch = showAuthPromptOnLaunch,
+                    onAuthPromptShown = {
+                        prefs.edit().putBoolean("auth_prompt_shown", true).apply()
+                    }
+                )
             }
         }
     }
