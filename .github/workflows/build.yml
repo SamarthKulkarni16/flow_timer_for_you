@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,7 +33,31 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+
+      # The Actions log UI isn't reachable from Claude's sandbox, so on
+      # failure, post the tail of the build log as a repo issue instead,
+      # which is readable via the GitHub REST API.
+      - name: Report build log on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tail -c 55000 build.log > build.log.trunc || true
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+          with open("build.log.trunc") as f:
+              log = f.read()
+          body = "```\n" + log + "\n```"
+          payload = json.dumps({"title": "CI build failure", "body": body}).encode()
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues",
+              data=payload, method="POST"
+          )
+          req.add_header("Authorization", f"token {os.environ['GH_TOKEN']}")
+          req.add_header("Accept", "application/vnd.github+json")
+          urllib.request.urlopen(req)
+          PYEOF
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
