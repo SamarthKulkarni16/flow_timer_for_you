@@ -3,16 +3,26 @@ plugins {
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.google.devtools.ksp)
   alias(libs.plugins.roborazzi)
-  alias(libs.plugins.secrets)
 }
 
+import java.util.Properties
+
+// Loads local.properties (gitignored) for local dev; CI supplies these
+// same keys as environment variables instead — see .github/workflows/build.yml.
+val localProps = Properties().apply {
+  val f = rootProject.file("local.properties")
+  if (f.exists()) f.inputStream().use { load(it) }
+}
+fun secret(key: String): String =
+  System.getenv(key) ?: localProps.getProperty(key) ?: ""
+
 android {
-  namespace = "com.example"
+  namespace = "com.flowtimer.app"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.flowtimer.vxkwqm"
-    minSdk = 24
+    applicationId = "com.flowtimer.app"
+    minSdk = 26
     targetSdk = 36
     versionCode = 1
     versionName = "1.0"
@@ -59,11 +69,10 @@ android {
   testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
-secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
+android.defaultConfig {
+  buildConfigField("String", "SUPABASE_URL", "\"${secret("SUPABASE_URL")}\"")
+  buildConfigField("String", "SUPABASE_ANON_KEY", "\"${secret("SUPABASE_ANON_KEY")}\"")
+  buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${secret("GOOGLE_WEB_CLIENT_ID")}\"")
 }
 
 // Some unused dependencies are commented out below instead of being removed.
@@ -71,6 +80,13 @@ secrets {
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
+  implementation(platform(libs.supabase.bom))
+  implementation(libs.supabase.postgrest)
+  implementation(libs.supabase.auth)
+  implementation(libs.ktor.client.android)
+  implementation(libs.androidx.credentials)
+  implementation(libs.androidx.credentials.play.services.auth)
+  implementation(libs.googleid)
   // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
   // implementation(libs.androidx.camera.camera2)

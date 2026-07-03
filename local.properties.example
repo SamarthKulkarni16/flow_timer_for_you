@@ -1,0 +1,6 @@
+# Copy this file to local.properties (which is gitignored) and fill in
+# real values for local builds. CI supplies these as GitHub Actions
+# secrets/environment variables instead - see .github/workflows/build.yml.
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key
+GOOGLE_WEB_CLIENT_ID=your-client-id.apps.googleusercontent.com

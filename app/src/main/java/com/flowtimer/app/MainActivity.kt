@@ -1,4 +1,4 @@
-package com.example
+package com.flowtimer.app
 
 import android.app.Activity
 import android.content.Context
@@ -51,7 +51,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.room.*
-import com.example.ui.theme.MyApplicationTheme
+import com.flowtimer.app.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
