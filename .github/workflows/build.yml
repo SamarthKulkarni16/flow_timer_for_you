@@ -97,6 +97,30 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease --stacktrace 2>&1 | tee release-build.log
 
+      - name: List actual release output files
+        if: steps.detect.outputs.has_release_keystore == 'true'
+        run: find app/build/outputs -type f | tee release-outputs.txt
+
+      - name: Report release output listing
+        if: steps.detect.outputs.has_release_keystore == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+          with open("release-outputs.txt") as f:
+              log = f.read()
+          body = "```\n" + log + "\n```"
+          payload = json.dumps({"title": "CI release output listing", "body": body}).encode()
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues",
+              data=payload, method="POST"
+          )
+          req.add_header("Authorization", f"token {os.environ['GH_TOKEN']}")
+          req.add_header("Accept", "application/vnd.github+json")
+          urllib.request.urlopen(req)
+          PYEOF
+
       - name: Report release build log on failure
         if: failure() && steps.detect.outputs.has_release_keystore == 'true'
         env:
