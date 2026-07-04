@@ -524,6 +524,31 @@
 
   function randPct(min, max) { return min + Math.random() * (max - min); }
 
+  // Picks `count` random-but-increasing points within [minFrac, maxFrac]
+  // of totalMs, enforcing a minimum gap so taps never land too close
+  // together or bunch up at the start/end.
+  function randomTapSlots(count, totalMs) {
+    var minFrac = 0.12, maxFrac = 0.94;
+    var span = maxFrac - minFrac;
+    var fracs = [];
+    for (var i = 0; i < count; i++) fracs.push(Math.random());
+    fracs.sort(function (a, b) { return a - b; });
+
+    var minGap = count > 1 ? span / (count * 1.8) : 0;
+    var points = fracs.map(function (f) { return minFrac + f * span; });
+    for (var j = 1; j < points.length; j++) {
+      if (points[j] - points[j - 1] < minGap) {
+        points[j] = points[j - 1] + minGap;
+      }
+    }
+    // if enforcing gaps pushed the last point past maxFrac, shift all back
+    var overshoot = points[points.length - 1] - maxFrac;
+    if (overshoot > 0) {
+      points = points.map(function (p) { return p - overshoot; });
+    }
+    return points.map(function (p) { return p * totalMs; });
+  }
+
   async function runTimerPhase(pane, cycle) {
     var canvas = pane.querySelector('.ring-canvas');
     var clockEl = pane.querySelector('#clock');
@@ -535,14 +560,11 @@
     drawRing(canvas, 1);
     clockEl.textContent = fmtClock(totalSeconds);
 
-    // Leave a little headroom before RUN_MS so the last tap doesn't
-    // land right at the natural end - finishing on the tap (below) is
-    // what actually ends the phase in that case.
-    var tapSlots = [];
-    for (var i = 0; i < cycle.count; i++) {
-      var frac = (i + 1) / (cycle.count + 0.15);
-      tapSlots.push(frac * RUN_MS);
-    }
+    // Random tap timing per task (not perfectly even intervals - real
+    // usage never lands exactly on the "average" time), but kept in
+    // increasing order with a minimum gap so taps never bunch up, and
+    // capped before RUN_MS so the last tap (not the clock) ends the phase.
+    var tapSlots = randomTapSlots(cycle.count, RUN_MS);
 
     var finished = false;
     var timers = [];
