@@ -20,7 +20,7 @@ fun secret(key: String): String =
 
 android {
   namespace = "com.flowtimer.app"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.flowtimer.app"
