@@ -89,7 +89,9 @@
     align-items: center; justify-content: center;
     gap: clamp(10px, 3vh, 16px);
     padding: 12% 9%;
+    transition: padding-bottom 220ms ease;
   }
+  .screen-inner.kb-open { padding-bottom: 30%; }
 
   /* home + running share the ring */
   .ring-wrap { position: relative; width: 62%; aspect-ratio: 1; }
@@ -152,7 +154,38 @@
   }
   @keyframes blink { 50% { opacity: 0; } }
 
-  /* running screen */
+  /* on-screen keyboard overlay */
+  .kb {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    padding: 4% 4% calc(3% + 6px);
+    display: flex; flex-direction: column;
+    gap: 3.5%;
+    background: rgba(255,255,255,0.035);
+    border-top: 1px solid var(--ink-faint);
+    opacity: 0;
+    transform: translateY(100%);
+    transition: opacity 220ms ease, transform 220ms ease;
+  }
+  .kb.show { opacity: 1; transform: translateY(0); }
+  .kb-row { display: flex; justify-content: center; gap: 2.6%; }
+  .kb-row.numeric { gap: 3%; }
+  .kb-key {
+    flex: 1;
+    max-width: 9%;
+    aspect-ratio: 1;
+    border: 1px solid var(--ink-faint);
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(6px, 1.9vw, 7.5px);
+    color: var(--ink-dim);
+    transition: background-color 90ms ease, color 90ms ease;
+  }
+  .kb-row.numeric .kb-key {
+    max-width: 11%;
+    font-size: clamp(8px, 2.4vw, 10px);
+  }
+  .kb-key.flash { background: var(--ink); color: var(--bg); }
   .task-counter {
     font-size: clamp(9px, 2.6vw, 11px);
     letter-spacing: 0.28em;
@@ -160,18 +193,6 @@
     transition: opacity 120ms ease, transform 120ms ease;
   }
   .task-counter.pulse { opacity: 1; transform: scale(1.08); }
-
-  .toast {
-    position: absolute;
-    left: 50%; top: 14%;
-    transform: translate(-50%, -6px);
-    font-size: clamp(8px, 2.3vw, 9.5px);
-    letter-spacing: 0.25em;
-    opacity: 0;
-    transition: opacity 200ms ease, transform 200ms ease;
-    white-space: nowrap;
-  }
-  .toast.show { opacity: 0.85; transform: translate(-50%, 0); }
 
   /* done screen */
   .done-text {
@@ -323,7 +344,7 @@
     { task: "Plan Week",    minutes: 25, count: 3 }
   ];
 
-  var RUN_MS = 18150;
+  var RUN_MS = 17300;
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
@@ -380,7 +401,7 @@
     setTimeout(function () { el.remove(); }, 600);
   }
 
-  function typeText(el, text, speed) {
+  function typeText(el, text, speed, onChar) {
     return new Promise(function (resolve) {
       var caret = document.createElement('span');
       caret.className = 'caret';
@@ -390,6 +411,7 @@
       (function step() {
         if (i < text.length) {
           caret.insertAdjacentText('beforebegin', text[i]);
+          if (onChar) onChar(text[i]);
           i++;
           setTimeout(step, speed);
         } else {
@@ -418,14 +440,54 @@
         '<div class="field"><label>Minutes</label><div class="value" id="f-min"></div></div>' +
         '<div class="field"><label>Tasks</label><div class="value" id="f-count"></div></div>' +
         '<div class="pill-btn" id="setupStart" style="margin-top:2%">Start</div>' +
-      '</div>'
+      '</div>' +
+      '<div class="kb" id="kb"></div>'
     );
+  }
+
+  var QWERTY_ROWS = ['QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
+  var NUMERIC_ROWS = ['123', '456', '789', '0'];
+
+  function keyboardRowsHTML(rows, numeric) {
+    return rows.map(function (row) {
+      var keys = row.split('').map(function (ch) {
+        return '<div class="kb-key" data-key="' + ch + '">' + ch + '</div>';
+      }).join('');
+      return '<div class="kb-row' + (numeric ? ' numeric' : '') + '">' + keys + '</div>';
+    }).join('');
+  }
+
+  function showKeyboard(pane, kind) {
+    var kb = pane.querySelector('#kb');
+    var inner = pane.querySelector('.screen-inner');
+    if (!kb) return null;
+    kb.innerHTML = kind === 'numeric'
+      ? keyboardRowsHTML(NUMERIC_ROWS, true)
+      : keyboardRowsHTML(QWERTY_ROWS, false);
+    void kb.offsetWidth;
+    kb.classList.add('show');
+    if (inner) inner.classList.add('kb-open');
+    return kb;
+  }
+
+  function hideKeyboard(pane) {
+    var kb = pane.querySelector('#kb');
+    var inner = pane.querySelector('.screen-inner');
+    if (kb) kb.classList.remove('show');
+    if (inner) inner.classList.remove('kb-open');
+  }
+
+  function flashKey(kb, ch) {
+    if (!kb) return;
+    var key = kb.querySelector('[data-key="' + ch.toUpperCase() + '"]');
+    if (!key) return;
+    key.classList.add('flash');
+    setTimeout(function () { key.classList.remove('flash'); }, 140);
   }
 
   function runningHTML() {
     return (
-      '<div class="screen-inner" style="position:relative">' +
-        '<div class="toast" id="toast">Task done</div>' +
+      '<div class="screen-inner">' +
         '<div class="ring-wrap"><canvas class="ring-canvas" width="240" height="240"></canvas>' +
           '<div class="ring-label" id="clock">00:00</div></div>' +
         '<div class="task-counter" id="counter"></div>' +
@@ -466,11 +528,10 @@
     var canvas = pane.querySelector('.ring-canvas');
     var clockEl = pane.querySelector('#clock');
     var counterEl = pane.querySelector('#counter');
-    var toastEl = pane.querySelector('#toast');
     var totalSeconds = cycle.minutes * 60;
     var completed = 0;
 
-    counterEl.textContent = cycle.count + ' task' + (cycle.count > 1 ? 's' : '') + ' left';
+    counterEl.textContent = '0/' + cycle.count;
     drawRing(canvas, 1);
     clockEl.textContent = fmtClock(totalSeconds);
 
@@ -501,12 +562,9 @@
           if (finished) return;
           completed++;
           ripple(pane, randPct(20, 80), randPct(30, 70));
-          var left = cycle.count - completed;
-          counterEl.textContent = left + ' task' + (left === 1 ? '' : 's') + ' left';
+          counterEl.textContent = completed + '/' + cycle.count;
           counterEl.classList.add('pulse');
-          toastEl.classList.add('show');
           setTimeout(function () { counterEl.classList.remove('pulse'); }, 220);
-          setTimeout(function () { toastEl.classList.remove('show'); }, 700);
 
           // All tasks done - the timer stops right here, not when
           // RUN_MS naturally runs out.
@@ -547,12 +605,27 @@
     // setup
     pane = transitionTo(setupHTML());
     await sleep(200);
-    await typeText(pane.querySelector('#f-task'), cycle.task, 105);
+
+    var kb = showKeyboard(pane, 'qwerty');
+    await sleep(220);
+    await typeText(pane.querySelector('#f-task'), cycle.task, 105, function (ch) {
+      flashKey(kb, ch);
+    });
     await sleep(260);
-    await typeText(pane.querySelector('#f-min'), String(cycle.minutes), 140);
+
+    kb = showKeyboard(pane, 'numeric');
+    await sleep(180);
+    await typeText(pane.querySelector('#f-min'), String(cycle.minutes), 140, function (ch) {
+      flashKey(kb, ch);
+    });
     await sleep(200);
-    await typeText(pane.querySelector('#f-count'), String(cycle.count), 140);
-    await sleep(280);
+    await typeText(pane.querySelector('#f-count'), String(cycle.count), 140, function (ch) {
+      flashKey(kb, ch);
+    });
+    await sleep(220);
+
+    hideKeyboard(pane);
+    await sleep(240);
 
     ripple(pane, 50, 78);
     pane.querySelector('#setupStart').classList.add('tapped');
