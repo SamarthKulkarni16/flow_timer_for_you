@@ -831,10 +831,10 @@ fun TimerScreen(viewModel: FlowTimerViewModel) {
 
                 Spacer(modifier = Modifier.height(72.dp))
 
-                // The customized Task Label Progress showing only the task count progress and not the custom task name
-                val activeTaskNum = viewModel.currentTaskIndex + 1
+                // Task progress shown as completed/total (e.g. 0/5, 3/5),
+                // matching the landing page preview's format.
                 Text(
-                    text = "$activeTaskNum of ${viewModel.totalTasksCount}",
+                    text = "${viewModel.currentTaskIndex}/${viewModel.totalTasksCount}",
                     color = Color.White,
                     fontSize = 20.sp,
                     fontFamily = FontFamily.SansSerif,
