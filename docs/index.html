@@ -467,26 +467,52 @@
     drawRing(canvas, 1);
     clockEl.textContent = fmtClock(totalSeconds);
 
+    // Leave a little headroom before RUN_MS so the last tap doesn't
+    // land right at the natural end - finishing on the tap (below) is
+    // what actually ends the phase in that case.
     var tapSlots = [];
     for (var i = 0; i < cycle.count; i++) {
-      var frac = (i + 1) / (cycle.count + 0.4);
+      var frac = (i + 1) / (cycle.count + 0.15);
       tapSlots.push(frac * RUN_MS);
     }
-    tapSlots.forEach(function (t) {
-      setTimeout(function () {
-        completed++;
-        ripple(pane, randPct(20, 80), randPct(30, 70));
-        counterEl.textContent = (cycle.count - completed) + ' task' + ((cycle.count - completed) === 1 ? '' : 's') + ' left';
-        counterEl.classList.add('pulse');
-        toastEl.classList.add('show');
-        setTimeout(function () { counterEl.classList.remove('pulse'); }, 220);
-        setTimeout(function () { toastEl.classList.remove('show'); }, 700);
-      }, t);
-    });
 
-    var start = performance.now();
+    var finished = false;
+    var timers = [];
+
     await new Promise(function (resolve) {
+      function finish() {
+        if (finished) return;
+        finished = true;
+        timers.forEach(clearTimeout);
+        drawRing(canvas, 0);
+        clockEl.textContent = fmtClock(0);
+        resolve();
+      }
+
+      tapSlots.forEach(function (t) {
+        var id = setTimeout(function () {
+          if (finished) return;
+          completed++;
+          ripple(pane, randPct(20, 80), randPct(30, 70));
+          var left = cycle.count - completed;
+          counterEl.textContent = left + ' task' + (left === 1 ? '' : 's') + ' left';
+          counterEl.classList.add('pulse');
+          toastEl.classList.add('show');
+          setTimeout(function () { counterEl.classList.remove('pulse'); }, 220);
+          setTimeout(function () { toastEl.classList.remove('show'); }, 700);
+
+          // All tasks done - the timer stops right here, not when
+          // RUN_MS naturally runs out.
+          if (completed >= cycle.count) {
+            timers.push(setTimeout(finish, 320));
+          }
+        }, t);
+        timers.push(id);
+      });
+
+      var start = performance.now();
       function frame(now) {
+        if (finished) return;
         var elapsed = now - start;
         var fraction = Math.max(0, 1 - elapsed / RUN_MS);
         drawRing(canvas, fraction);
@@ -494,9 +520,7 @@
         if (elapsed < RUN_MS) {
           requestAnimationFrame(frame);
         } else {
-          drawRing(canvas, 0);
-          clockEl.textContent = fmtClock(0);
-          resolve();
+          finish();
         }
       }
       requestAnimationFrame(frame);
