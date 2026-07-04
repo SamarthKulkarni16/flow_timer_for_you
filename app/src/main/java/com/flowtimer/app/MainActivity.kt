@@ -180,11 +180,11 @@ object FlowHapticManager {
         }
     }
 
-    fun vibrate(durationMillis: Long) {
+    fun vibrate(durationMillis: Long, amplitude: Int = VibrationEffect.DEFAULT_AMPLITUDE) {
         val vib = vibrator ?: return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vib.vibrate(VibrationEffect.createOneShot(durationMillis, VibrationEffect.DEFAULT_AMPLITUDE))
+                vib.vibrate(VibrationEffect.createOneShot(durationMillis, amplitude))
             } else {
                 @Suppress("DEPRECATION")
                 vib.vibrate(durationMillis)
@@ -312,9 +312,9 @@ class FlowTimerViewModel(
         // Guard against double clicks/race conditions during state transition
         if (isDoneState || currentTaskIndex >= totalTasksCount) return
 
-        if (!expiredNaturally) {
-            FlowHapticManager.vibrate(500)
-        }
+        // Light, brief buzz every time a task completes - whether tapped
+        // manually or the time simply ran out.
+        FlowHapticManager.vibrate(500, 40)
 
         val now = System.currentTimeMillis()
         val actualTaskDurationMillis = now - taskStartRealTimeMillis
