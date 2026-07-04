@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<title>Flow Timer</title>
+<meta name="description" content="A quiet timer for one task at a time.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@200;400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #000000;
+    --ink: #ffffff;
+    --ink-dim: rgba(255,255,255,0.42);
+    --ink-faint: rgba(255,255,255,0.16);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--bg); color: var(--ink); height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body {
+    height: 100dvh; width: 100%;
+    font-family: 'JetBrains Mono', monospace;
+    display: flex; flex-direction: column;
+  }
+  a { color: inherit; }
+
+  /* ---------- top: brand ---------- */
+  .brand {
+    flex: 0 0 auto;
+    padding-top: max(4vh, env(safe-area-inset-top));
+    text-align: center;
+    font-size: clamp(11px, 2.6vw, 13px);
+    font-weight: 200;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    opacity: 0.9;
+  }
+
+  /* ---------- middle: phone preview ---------- */
+  .stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .phone {
+    position: relative;
+    width: clamp(196px, 58vw, 288px);
+    aspect-ratio: 9 / 19.5;
+    border: 1.5px solid var(--ink);
+    border-radius: clamp(26px, 7vw, 38px);
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .phone::after {
+    /* home indicator */
+    content: '';
+    position: absolute;
+    left: 50%; bottom: 1.6%;
+    transform: translateX(-50%);
+    width: 28%; height: 3px;
+    border-radius: 2px;
+    background: var(--ink);
+    opacity: 0.35;
+    z-index: 5;
+  }
+
+  .pane {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity 260ms ease, transform 260ms ease;
+    transform: scale(0.985);
+  }
+  .pane.live { opacity: 1; transform: scale(1); }
+
+  .screen-inner {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: clamp(10px, 3vh, 16px);
+    padding: 12% 9%;
+  }
+
+  /* home + running share the ring */
+  .ring-wrap { position: relative; width: 62%; aspect-ratio: 1; }
+  .ring-wrap canvas { width: 100%; height: 100%; display: block; }
+  .ring-label {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: clamp(15px, 5.6vw, 21px);
+    font-weight: 200; letter-spacing: 0.03em;
+  }
+  .ring-sub {
+    position: absolute; left: 0; right: 0; bottom: 22%;
+    text-align: center;
+    font-size: clamp(6.5px, 2vw, 8px);
+    letter-spacing: 0.3em;
+    opacity: 0.4;
+  }
+
+  .pill-btn {
+    border: 1px solid var(--ink);
+    padding: clamp(7px, 2vh, 10px) clamp(18px, 6vw, 26px);
+    font-size: clamp(10px, 3vw, 12px);
+    letter-spacing: 0.3em;
+    font-weight: 400;
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+  .pill-btn.tapped { background: var(--ink); color: var(--bg); }
+
+  .wordmark-sm {
+    font-size: clamp(9px, 2.6vw, 11px);
+    letter-spacing: 0.35em;
+    font-weight: 200;
+    opacity: 0.5;
+    margin-bottom: 2%;
+  }
+
+  /* setup screen */
+  .field { width: 100%; display: flex; flex-direction: column; gap: 2px; }
+  .field label {
+    font-size: clamp(7.5px, 2.1vw, 9px);
+    letter-spacing: 0.32em;
+    opacity: 0.4;
+  }
+  .field .value {
+    font-size: clamp(13px, 4vw, 16px);
+    font-weight: 400;
+    min-height: 1.4em;
+    border-bottom: 1px solid var(--ink-faint);
+    padding-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .caret {
+    display: inline-block;
+    width: 1px; height: 0.95em;
+    background: var(--ink);
+    margin-left: 2px;
+    vertical-align: -0.12em;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* running screen */
+  .task-counter {
+    font-size: clamp(9px, 2.6vw, 11px);
+    letter-spacing: 0.28em;
+    opacity: 0.55;
+    transition: opacity 120ms ease, transform 120ms ease;
+  }
+  .task-counter.pulse { opacity: 1; transform: scale(1.08); }
+
+  .toast {
+    position: absolute;
+    left: 50%; top: 14%;
+    transform: translate(-50%, -6px);
+    font-size: clamp(8px, 2.3vw, 9.5px);
+    letter-spacing: 0.25em;
+    opacity: 0;
+    transition: opacity 200ms ease, transform 200ms ease;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 0.85; transform: translate(-50%, 0); }
+
+  /* done screen */
+  .done-text {
+    font-size: clamp(20px, 7vw, 28px);
+    font-weight: 200;
+    letter-spacing: 0.08em;
+  }
+
+  /* history screen */
+  .history-title {
+    align-self: flex-start;
+    font-size: clamp(9px, 2.6vw, 11px);
+    letter-spacing: 0.32em;
+    opacity: 0.45;
+    margin-bottom: 2%;
+  }
+  .history-list {
+    width: 100%;
+    display: flex; flex-direction: column;
+    gap: clamp(8px, 2.4vh, 12px);
+  }
+  .history-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 8px;
+    padding-bottom: clamp(6px, 1.8vh, 10px);
+    border-bottom: 1px solid var(--ink-faint);
+  }
+  .history-row .h-task {
+    font-size: clamp(10.5px, 3.2vw, 13px);
+    font-weight: 400;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .history-row .h-meta {
+    font-size: clamp(8px, 2.3vw, 9.5px);
+    opacity: 0.45;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+  .history-empty {
+    font-size: clamp(9px, 2.6vw, 11px);
+    opacity: 0.4;
+    letter-spacing: 0.15em;
+  }
+
+  /* tap ripple */
+  .ripple {
+    position: absolute;
+    width: 14px; height: 14px;
+    border: 1px solid var(--ink);
+    border-radius: 50%;
+    left: 0; top: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 0.9;
+    pointer-events: none;
+    animation: ripple-out 550ms ease-out forwards;
+    z-index: 10;
+  }
+  @keyframes ripple-out {
+    to { transform: translate(-50%, -50%) scale(3.1); opacity: 0; }
+  }
+
+  /* ---------- bottom: download ---------- */
+  .cta-area {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    padding: 4vh 8vw max(4vh, env(safe-area-inset-bottom));
+  }
+  .download-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: min(280px, 74vw); height: clamp(48px, 6.5vh, 56px);
+    background: transparent; color: var(--ink);
+    font-weight: 400; font-size: clamp(11px, 2.8vw, 13px);
+    letter-spacing: 0.3em; text-transform: uppercase;
+    border: 1px solid var(--ink); border-radius: 0;
+    text-decoration: none;
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+  .download-btn:hover { background: var(--ink); color: var(--bg); }
+  .download-btn:active { background: var(--ink); color: var(--bg); }
+  .download-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+  @media (max-height: 560px) {
+    .brand { padding-top: 2vh; }
+    .cta-area { padding: 2.5vh 8vw max(2.5vh, env(safe-area-inset-bottom)); }
+  }
+</style>
+</head>
+<body>
+
+  <div class="brand">Flow Timer</div>
+
+  <div class="stage">
+    <div class="phone" id="phone">
+      <div class="pane" id="paneA"></div>
+      <div class="pane" id="paneB"></div>
+    </div>
+  </div>
+
+  <div class="cta-area">
+    <a class="download-btn" id="downloadBtn"
+       href="https://github.com/SamarthKulkarni16/flow_timer_for_you/releases/download/v1.0.0/app-release.apk"
+       download>
+      Download
+    </a>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var CYCLES = [
+    { task: "Deep Work",    minutes: 25, count: 3 },
+    { task: "Read Paper",   minutes: 15, count: 2 },
+    { task: "Write Code",   minutes: 40, count: 4 },
+    { task: "Study Notes",  minutes: 20, count: 3 },
+    { task: "Clean Desk",   minutes: 10, count: 1 },
+    { task: "Morning Run",  minutes: 30, count: 2 },
+    { task: "Inbox Zero",   minutes: 15, count: 5 },
+    { task: "Sketch Ideas", minutes: 20, count: 2 },
+    { task: "Meditate",     minutes: 10, count: 1 },
+    { task: "Plan Week",    minutes: 25, count: 3 }
+  ];
+
+  var RUN_MS = 19000;
+
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  function fmtClock(totalSeconds) {
+    totalSeconds = Math.max(0, Math.round(totalSeconds));
+    var m = Math.floor(totalSeconds / 60);
+    var s = totalSeconds % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function drawRing(canvas, fraction) {
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var size = canvas.width;
+    ctx.clearRect(0, 0, size, size);
+    if (fraction <= 0) return;
+    var cx = size / 2, cy = size / 2, radius = size * 0.46, lineWidth = size * 0.033;
+    var startAngle = -Math.PI / 2;
+    var endAngle = startAngle + fraction * 2 * Math.PI;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, startAngle, endAngle, false);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'square';
+    ctx.stroke();
+  }
+
+  // ---- pane crossfade management ----
+  var paneA = document.getElementById('paneA');
+  var paneB = document.getElementById('paneB');
+  var liveIsA = true;
+
+  function currentPane() { return liveIsA ? paneA : paneB; }
+  function nextPane() { return liveIsA ? paneB : paneA; }
+
+  function transitionTo(html) {
+    var incoming = nextPane();
+    incoming.innerHTML = html;
+    var outgoing = currentPane();
+    outgoing.classList.remove('live');
+    // force reflow so the enter transition reliably plays
+    void incoming.offsetWidth;
+    incoming.classList.add('live');
+    liveIsA = !liveIsA;
+    return incoming;
+  }
+
+  function ripple(hostPane, xPct, yPct) {
+    var el = document.createElement('div');
+    el.className = 'ripple';
+    el.style.left = xPct + '%';
+    el.style.top = yPct + '%';
+    hostPane.appendChild(el);
+    setTimeout(function () { el.remove(); }, 600);
+  }
+
+  function typeText(el, text, speed) {
+    return new Promise(function (resolve) {
+      var caret = document.createElement('span');
+      caret.className = 'caret';
+      el.textContent = '';
+      el.appendChild(caret);
+      var i = 0;
+      (function step() {
+        if (i < text.length) {
+          caret.insertAdjacentText('beforebegin', text[i]);
+          i++;
+          setTimeout(step, speed);
+        } else {
+          resolve();
+        }
+      })();
+    });
+  }
+
+  // ---- screen templates ----
+  function homeHTML() {
+    return (
+      '<div class="screen-inner">' +
+        '<div class="wordmark-sm">FLOW TIMER</div>' +
+        '<div class="ring-wrap"><canvas class="ring-canvas" width="240" height="240"></canvas>' +
+          '<div class="ring-label">Ready</div></div>' +
+        '<div class="pill-btn" id="homeStart">Start</div>' +
+      '</div>'
+    );
+  }
+
+  function setupHTML() {
+    return (
+      '<div class="screen-inner">' +
+        '<div class="field"><label>Task</label><div class="value" id="f-task"></div></div>' +
+        '<div class="field"><label>Minutes</label><div class="value" id="f-min"></div></div>' +
+        '<div class="field"><label>Tasks</label><div class="value" id="f-count"></div></div>' +
+        '<div class="pill-btn" id="setupStart" style="margin-top:2%">Start</div>' +
+      '</div>'
+    );
+  }
+
+  function runningHTML() {
+    return (
+      '<div class="screen-inner" style="position:relative">' +
+        '<div class="toast" id="toast">Task done</div>' +
+        '<div class="ring-wrap"><canvas class="ring-canvas" width="240" height="240"></canvas>' +
+          '<div class="ring-label" id="clock">00:00</div></div>' +
+        '<div class="task-counter" id="counter"></div>' +
+      '</div>'
+    );
+  }
+
+  function doneHTML() {
+    return '<div class="screen-inner"><div class="done-text">Done.</div></div>';
+  }
+
+  function historyHTML(log) {
+    if (!log.length) {
+      return '<div class="screen-inner"><div class="history-title">History</div><div class="history-empty">No sessions yet</div></div>';
+    }
+    var rows = log.map(function (e) {
+      return (
+        '<div class="history-row">' +
+          '<div class="h-task">' + e.task + '</div>' +
+          '<div class="h-meta">' + e.minutes + 'm &middot; ' + e.count + '/' + e.count + '</div>' +
+        '</div>'
+      );
+    }).join('');
+    return (
+      '<div class="screen-inner" style="justify-content:flex-start; padding-top:16%">' +
+        '<div class="history-title">History</div>' +
+        '<div class="history-list">' + rows + '</div>' +
+      '</div>'
+    );
+  }
+
+  // ---- run one cycle ----
+  var history = [];
+
+  function randPct(min, max) { return min + Math.random() * (max - min); }
+
+  async function runTimerPhase(pane, cycle) {
+    var canvas = pane.querySelector('.ring-canvas');
+    var clockEl = pane.querySelector('#clock');
+    var counterEl = pane.querySelector('#counter');
+    var toastEl = pane.querySelector('#toast');
+    var totalSeconds = cycle.minutes * 60;
+    var completed = 0;
+
+    counterEl.textContent = cycle.count + ' task' + (cycle.count > 1 ? 's' : '') + ' left';
+    drawRing(canvas, 1);
+    clockEl.textContent = fmtClock(totalSeconds);
+
+    var tapSlots = [];
+    for (var i = 0; i < cycle.count; i++) {
+      var frac = (i + 1) / (cycle.count + 0.4);
+      tapSlots.push(frac * RUN_MS);
+    }
+    tapSlots.forEach(function (t) {
+      setTimeout(function () {
+        completed++;
+        ripple(pane, randPct(20, 80), randPct(30, 70));
+        counterEl.textContent = (cycle.count - completed) + ' task' + ((cycle.count - completed) === 1 ? '' : 's') + ' left';
+        counterEl.classList.add('pulse');
+        toastEl.classList.add('show');
+        setTimeout(function () { counterEl.classList.remove('pulse'); }, 220);
+        setTimeout(function () { toastEl.classList.remove('show'); }, 700);
+      }, t);
+    });
+
+    var start = performance.now();
+    await new Promise(function (resolve) {
+      function frame(now) {
+        var elapsed = now - start;
+        var fraction = Math.max(0, 1 - elapsed / RUN_MS);
+        drawRing(canvas, fraction);
+        clockEl.textContent = fmtClock(totalSeconds * fraction);
+        if (elapsed < RUN_MS) {
+          requestAnimationFrame(frame);
+        } else {
+          drawRing(canvas, 0);
+          clockEl.textContent = fmtClock(0);
+          resolve();
+        }
+      }
+      requestAnimationFrame(frame);
+    });
+  }
+
+  async function playCycle(cycle) {
+    // home
+    var pane = transitionTo(homeHTML());
+    drawRing(pane.querySelector('.ring-canvas'), 1);
+    await sleep(1500);
+
+    ripple(pane, 50, 74);
+    pane.querySelector('#homeStart').classList.add('tapped');
+    await sleep(280);
+
+    // setup
+    pane = transitionTo(setupHTML());
+    await sleep(200);
+    await typeText(pane.querySelector('#f-task'), cycle.task, 58);
+    await sleep(160);
+    await typeText(pane.querySelector('#f-min'), String(cycle.minutes), 90);
+    await sleep(140);
+    await typeText(pane.querySelector('#f-count'), String(cycle.count), 90);
+    await sleep(280);
+
+    ripple(pane, 50, 78);
+    pane.querySelector('#setupStart').classList.add('tapped');
+    await sleep(280);
+
+    // running
+    pane = transitionTo(runningHTML());
+    await runTimerPhase(pane, cycle);
+
+    // done
+    pane = transitionTo(doneHTML());
+    await sleep(1400);
+
+    // back home
+    pane = transitionTo(homeHTML());
+    drawRing(pane.querySelector('.ring-canvas'), 1);
+    await sleep(550);
+
+    // triple tap blank space -> history
+    ripple(pane, 50, 46); await sleep(150);
+    ripple(pane, 50, 46); await sleep(150);
+    ripple(pane, 50, 46);
+    await sleep(320);
+
+    history.unshift({ task: cycle.task, minutes: cycle.minutes, count: cycle.count });
+    if (history.length > 6) history.length = 6;
+
+    pane = transitionTo(historyHTML(history));
+    await sleep(3600);
+
+    // back home before next cycle
+    pane = transitionTo(homeHTML());
+    drawRing(pane.querySelector('.ring-canvas'), 1);
+    await sleep(500);
+  }
+
+  async function engine() {
+    var lastIndex = -1;
+    while (true) {
+      var idx;
+      do { idx = Math.floor(Math.random() * CYCLES.length); } while (idx === lastIndex && CYCLES.length > 1);
+      lastIndex = idx;
+      await playCycle(CYCLES[idx]);
+    }
+  }
+
+  if (reduced) {
+    var pane = transitionTo(homeHTML());
+    drawRing(pane.querySelector('.ring-canvas'), 1);
+  } else {
+    engine();
+  }
+})();
+</script>
+
+</body>
+</html>
