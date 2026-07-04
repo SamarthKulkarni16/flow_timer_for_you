@@ -47,7 +47,7 @@
 
   .phone {
     position: relative;
-    width: clamp(196px, 58vw, 288px);
+    width: 288px;
     aspect-ratio: 9 / 19.5;
     border: 1.5px solid var(--ink);
     border-radius: clamp(26px, 7vw, 38px);
@@ -276,6 +276,32 @@
   "use strict";
 
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Size the phone frame to actually fit the space between the brand
+  // label and the download button, instead of guessing from vw/vh
+  // (which can overshoot on wide-but-short viewports and push the
+  // download button off screen).
+  var phoneEl = document.getElementById('phone');
+  var stageEl = document.querySelector('.stage');
+  var RATIO = 19.5 / 9; // height / width
+
+  function sizePhone() {
+    var availW = stageEl.clientWidth * 0.86;
+    var availH = stageEl.clientHeight * 0.94;
+    var w = availW;
+    var h = w * RATIO;
+    if (h > availH) {
+      h = availH;
+      w = h / RATIO;
+    }
+    w = Math.max(170, Math.min(w, 300));
+    h = w * RATIO;
+    phoneEl.style.width = w + 'px';
+    phoneEl.style.height = h + 'px';
+  }
+  sizePhone();
+  window.addEventListener('resize', sizePhone);
+  window.addEventListener('orientationchange', sizePhone);
 
   var CYCLES = [
     { task: "Deep Work",    minutes: 25, count: 3 },
