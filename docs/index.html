@@ -290,7 +290,7 @@
     { task: "Plan Week",    minutes: 25, count: 3 }
   ];
 
-  var RUN_MS = 19000;
+  var RUN_MS = 18150;
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
@@ -490,11 +490,11 @@
     // setup
     pane = transitionTo(setupHTML());
     await sleep(200);
-    await typeText(pane.querySelector('#f-task'), cycle.task, 58);
-    await sleep(160);
-    await typeText(pane.querySelector('#f-min'), String(cycle.minutes), 90);
-    await sleep(140);
-    await typeText(pane.querySelector('#f-count'), String(cycle.count), 90);
+    await typeText(pane.querySelector('#f-task'), cycle.task, 105);
+    await sleep(260);
+    await typeText(pane.querySelector('#f-min'), String(cycle.minutes), 140);
+    await sleep(200);
+    await typeText(pane.querySelector('#f-count'), String(cycle.count), 140);
     await sleep(280);
 
     ripple(pane, 50, 78);
