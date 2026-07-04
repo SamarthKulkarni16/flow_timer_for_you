@@ -2,8 +2,10 @@ package com.flowtimer.app.data
 
 import com.flowtimer.app.BuildConfig
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.postgrest.postgrest
 
 /**
  * Single shared Supabase client for the app.
