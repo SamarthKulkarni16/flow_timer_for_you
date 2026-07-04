@@ -8,6 +8,13 @@ plugins {
 }
 
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+kotlin {
+  compilerOptions {
+    jvmTarget.set(JvmTarget.JVM_17)
+  }
+}
 
 // Loads local.properties (gitignored) for local dev; CI supplies these
 // same keys as environment variables instead — see .github/workflows/build.yml.
