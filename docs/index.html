@@ -554,6 +554,7 @@
     var clockEl = pane.querySelector('#clock');
     var counterEl = pane.querySelector('#counter');
     var totalSeconds = cycle.minutes * 60;
+    var allocatedPerTask = totalSeconds / cycle.count;
     var completed = 0;
 
     counterEl.textContent = '0/' + cycle.count;
@@ -569,7 +570,25 @@
     var finished = false;
     var timers = [];
 
+    // Mirrors the real app: the clock doesn't count down independently
+    // of taps. Each task has a fixed time budget (totalSeconds / count).
+    // Completing a task snaps the remaining time straight to that
+    // task's scheduled boundary (totalSeconds - completedCount * budget)
+    // - never backward - and the countdown continues from there at the
+    // same steady rate. Tapping "early" jumps the clock forward in time;
+    // the clock never runs independently of task completion.
+    var rate = totalSeconds / RUN_MS; // virtual seconds per real ms
+    var baselineSeconds = totalSeconds;
+    var baselineRealMs = 0;
+
+    function displaySecondsAt(elapsedReal) {
+      var val = baselineSeconds - (elapsedReal - baselineRealMs) * rate;
+      return Math.max(0, val);
+    }
+
     await new Promise(function (resolve) {
+      var start = performance.now();
+
       function finish() {
         if (finished) return;
         finished = true;
@@ -583,6 +602,17 @@
         var id = setTimeout(function () {
           if (finished) return;
           completed++;
+
+          var elapsedReal = performance.now() - start;
+          var nominalBoundary = Math.max(0, totalSeconds - completed * allocatedPerTask);
+          // Never snap backward/up - only jump the clock forward to the
+          // scheduled boundary if it hasn't already passed that point.
+          baselineSeconds = Math.min(displaySecondsAt(elapsedReal), nominalBoundary);
+          baselineRealMs = elapsedReal;
+
+          drawRing(canvas, totalSeconds > 0 ? baselineSeconds / totalSeconds : 0);
+          clockEl.textContent = fmtClock(baselineSeconds);
+
           ripple(pane, randPct(20, 80), randPct(30, 70));
           counterEl.textContent = completed + '/' + cycle.count;
           counterEl.classList.add('pulse');
@@ -597,14 +627,13 @@
         timers.push(id);
       });
 
-      var start = performance.now();
       function frame(now) {
         if (finished) return;
         var elapsed = now - start;
-        var fraction = Math.max(0, 1 - elapsed / RUN_MS);
-        drawRing(canvas, fraction);
-        clockEl.textContent = fmtClock(totalSeconds * fraction);
-        if (elapsed < RUN_MS) {
+        var seconds = displaySecondsAt(elapsed);
+        drawRing(canvas, totalSeconds > 0 ? seconds / totalSeconds : 0);
+        clockEl.textContent = fmtClock(seconds);
+        if (elapsed < RUN_MS && seconds > 0) {
           requestAnimationFrame(frame);
         } else {
           finish();
