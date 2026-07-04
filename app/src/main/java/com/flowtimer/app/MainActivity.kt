@@ -1130,7 +1130,7 @@ class MainActivity : ComponentActivity() {
         // while signed out, and pull down sessions saved from other devices.
         lifecycleScope.launch {
             authViewModel.sessionStatus.collect { status ->
-                if (status is io.github.jan.supabase.auth.SessionStatus.Authenticated) {
+                if (status is io.github.jan.supabase.auth.status.SessionStatus.Authenticated) {
                     syncRepository.syncAll()
                 }
             }

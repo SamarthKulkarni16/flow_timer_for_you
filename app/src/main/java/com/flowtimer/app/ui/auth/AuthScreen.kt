@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.flowtimer.app.data.AuthUiState
 import com.flowtimer.app.data.AuthViewModel
-import io.github.jan.supabase.auth.SessionStatus
+import io.github.jan.supabase.auth.status.SessionStatus
 
 /**
  * Sign in / create account screen. Shown on first launch (skippable - the
