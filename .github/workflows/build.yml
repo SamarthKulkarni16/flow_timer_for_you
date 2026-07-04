@@ -28,6 +28,35 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # TEMP DIAGNOSTIC: dump the compile classpath to see which supabase-kt
+      # variant (android vs jvm vs metadata) actually gets resolved for
+      # compilation, since "Unresolved reference" errors on supabase symbols
+      # persisted across AGP 9 -> AGP 8 downgrade, pointing at a variant
+      # resolution issue rather than an AGP compatibility issue.
+      - name: Diagnose compile classpath
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./gradlew :app:dependencies --configuration debugCompileClasspath > compile-deps.txt 2>&1 || true
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+          with open("compile-deps.txt") as f:
+              log = f.read()
+          body = "```\n" + log[-55000:] + "\n```"
+          payload = json.dumps({"title": "DIAG debugCompileClasspath", "body": body}).encode()
+          req = urllib.request.Request(
+              f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/issues",
+              data=payload, method="POST"
+          )
+          req.add_header("Authorization", f"token {os.environ['GH_TOKEN']}")
+          req.add_header("Accept", "application/vnd.github+json")
+          urllib.request.urlopen(req)
+          PYEOF
+        continue-on-error: true
+
       # Always produce a debug APK, signed with the checked-in debug key.
       - name: Build debug APK
         env:
