@@ -15,6 +15,7 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.providers.builtin.IDToken
+import io.github.jan.supabase.auth.user.UserInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,8 @@ sealed class AuthUiState {
     object Idle : AuthUiState()
     object Loading : AuthUiState()
     data class Error(val message: String) : AuthUiState()
+    /** Emitted right after a successful sign-in/sign-up so the UI can show the welcome animation. */
+    data class Success(val isNewAccount: Boolean) : AuthUiState()
 }
 
 class AuthViewModel : ViewModel() {
@@ -43,7 +46,13 @@ class AuthViewModel : ViewModel() {
 
     fun isSignedIn(): Boolean = auth.currentUserOrNull() != null
 
-    fun signInWithEmail(email: String, password: String) {
+    /**
+     * Single entry point for email auth. Tries signing in first; if that fails
+     * (most likely because no account exists yet with this email), attempts to
+     * create one. This removes the need for a separate "create account" mode -
+     * the user just enters their details and continues.
+     */
+    fun continueWithEmail(email: String, password: String) {
         if (email.isBlank() || password.isBlank()) {
             _uiState.value = AuthUiState.Error("Enter an email and password")
             return
@@ -55,28 +64,27 @@ class AuthViewModel : ViewModel() {
                     this.email = email.trim()
                     this.password = password
                 }
-                _uiState.value = AuthUiState.Idle
-            } catch (e: Exception) {
-                _uiState.value = AuthUiState.Error(e.message ?: "Sign in failed")
-            }
-        }
-    }
-
-    fun signUpWithEmail(email: String, password: String) {
-        if (email.isBlank() || password.length < 6) {
-            _uiState.value = AuthUiState.Error("Password must be at least 6 characters")
-            return
-        }
-        _uiState.value = AuthUiState.Loading
-        viewModelScope.launch {
-            try {
-                auth.signUpWith(Email) {
-                    this.email = email.trim()
-                    this.password = password
+                _uiState.value = AuthUiState.Success(isNewAccount = false)
+            } catch (signInError: Exception) {
+                if (password.length < 6) {
+                    _uiState.value = AuthUiState.Error("Password must be at least 6 characters")
+                    return@launch
                 }
-                _uiState.value = AuthUiState.Idle
-            } catch (e: Exception) {
-                _uiState.value = AuthUiState.Error(e.message ?: "Sign up failed")
+                try {
+                    auth.signUpWith(Email) {
+                        this.email = email.trim()
+                        this.password = password
+                    }
+                    if (auth.currentUserOrNull() != null) {
+                        _uiState.value = AuthUiState.Success(isNewAccount = true)
+                    } else {
+                        // Project has email confirmation enabled - no session yet.
+                        _uiState.value = AuthUiState.Error("Check your email to confirm your account, then continue")
+                    }
+                } catch (signUpError: Exception) {
+                    // Sign-in failed AND sign-up failed (email already registered) -> wrong password.
+                    _uiState.value = AuthUiState.Error("Incorrect password")
+                }
             }
         }
     }
@@ -107,7 +115,7 @@ class AuthViewModel : ViewModel() {
                     provider = Google
                     nonce = rawNonce
                 }
-                _uiState.value = AuthUiState.Idle
+                _uiState.value = AuthUiState.Success(isNewAccount = isNewAccount(auth.currentUserOrNull()))
             } catch (e: GetCredentialException) {
                 _uiState.value = AuthUiState.Error("Google sign-in cancelled or unavailable")
             } catch (e: Exception) {
@@ -130,6 +138,20 @@ class AuthViewModel : ViewModel() {
         if (_uiState.value is AuthUiState.Error) {
             _uiState.value = AuthUiState.Idle
         }
+    }
+
+    /** Called once the welcome animation finishes playing. */
+    fun completeAuthFlow() {
+        if (_uiState.value is AuthUiState.Success) {
+            _uiState.value = AuthUiState.Idle
+        }
+    }
+
+    /** A user is "new" if their account was created within a few seconds of this sign-in. */
+    private fun isNewAccount(user: UserInfo?): Boolean {
+        val created = user?.createdAt ?: return false
+        val lastSignIn = user.lastSignInAt ?: return true
+        return (lastSignIn - created).inWholeSeconds < 5
     }
 
     private fun sha256(input: String): String {

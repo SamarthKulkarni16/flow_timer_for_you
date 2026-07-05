@@ -28,11 +28,15 @@ import androidx.compose.ui.unit.sp
 import com.flowtimer.app.data.AuthUiState
 import com.flowtimer.app.data.AuthViewModel
 import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.delay
 
 /**
- * Sign in / create account screen. Shown on first launch (skippable - the
- * app is fully usable offline without an account) and reachable later from
- * Home for backup/sync.
+ * Sign in screen. Shown on first launch (skippable - the app is fully usable
+ * offline without an account) and reachable later from Home for backup/sync.
+ *
+ * There is a single unified flow: the user enters email + password (or taps
+ * Google) and continues. Whether that creates a new account or logs into an
+ * existing one is resolved automatically - there's no separate "sign up" mode.
  */
 @Composable
 fun AuthScreen(
@@ -50,16 +54,20 @@ fun AuthScreen(
             .background(Color.Black)
             .windowInsetsPadding(WindowInsets.safeDrawing)
     ) {
-        when (val status = sessionStatus) {
-            is SessionStatus.Authenticated -> SignedInContent(
-                email = status.session.user?.email,
+        val successState = uiState as? AuthUiState.Success
+        when {
+            successState != null -> WelcomeOverlay(
+                isNewAccount = successState.isNewAccount,
+                onFinished = { viewModel.completeAuthFlow() }
+            )
+            sessionStatus is SessionStatus.Authenticated -> SignedInContent(
+                email = (sessionStatus as SessionStatus.Authenticated).session.user?.email,
                 onSignOut = { viewModel.signOut() },
                 onBack = onBack
             )
             else -> SignedOutContent(
                 uiState = uiState,
-                onSignIn = { email, password -> viewModel.signInWithEmail(email, password) },
-                onSignUp = { email, password -> viewModel.signUpWithEmail(email, password) },
+                onContinueWithEmail = { email, password -> viewModel.continueWithEmail(email, password) },
                 onGoogleSignIn = { viewModel.signInWithGoogle(context) },
                 onSkip = onSkip,
                 onBack = onBack,
@@ -70,16 +78,44 @@ fun AuthScreen(
 }
 
 @Composable
+private fun WelcomeOverlay(isNewAccount: Boolean, onFinished: () -> Unit) {
+    var phase by remember { mutableStateOf(1) }
+
+    LaunchedEffect(Unit) {
+        delay(3000)
+        phase = 2
+        delay(2000)
+        onFinished()
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = when {
+                phase == 1 && isNewAccount -> "Account Created"
+                phase == 1 && !isNewAccount -> "Account Found"
+                isNewAccount -> "Welcome"
+                else -> "Welcome Back"
+            },
+            color = Color.White,
+            fontSize = 22.sp,
+            fontFamily = FontFamily.SansSerif,
+            fontWeight = FontWeight.Normal
+        )
+    }
+}
+
+@Composable
 private fun SignedOutContent(
     uiState: AuthUiState,
-    onSignIn: (String, String) -> Unit,
-    onSignUp: (String, String) -> Unit,
+    onContinueWithEmail: (String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSkip: () -> Unit,
     onBack: (() -> Unit)?,
     onDismissError: () -> Unit
 ) {
-    var isSignUpMode by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
@@ -117,7 +153,7 @@ private fun SignedOutContent(
         }
 
         Text(
-            text = if (isSignUpMode) "create account" else "sign in",
+            text = "sign in",
             color = Color.White,
             fontSize = 26.sp,
             fontFamily = FontFamily.SansSerif,
@@ -157,7 +193,7 @@ private fun SignedOutContent(
             isPassword = true,
             onImeAction = {
                 focusManager.clearFocus()
-                if (isSignUpMode) onSignUp(email, password) else onSignIn(email, password)
+                onContinueWithEmail(email, password)
             }
         )
 
@@ -182,7 +218,7 @@ private fun SignedOutContent(
             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(28.dp))
         } else {
             Text(
-                text = if (isSignUpMode) "create account" else "continue",
+                text = "continue",
                 color = Color.Black,
                 fontSize = 18.sp,
                 fontFamily = FontFamily.SansSerif,
@@ -193,9 +229,7 @@ private fun SignedOutContent(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
-                    ) {
-                        if (isSignUpMode) onSignUp(email, password) else onSignIn(email, password)
-                    }
+                    ) { onContinueWithEmail(email, password) }
                     .padding(horizontal = 40.dp, vertical = 14.dp)
             )
 
@@ -217,22 +251,6 @@ private fun SignedOutContent(
         }
 
         Spacer(modifier = Modifier.height(28.dp))
-
-        Text(
-            text = if (isSignUpMode) "have an account? sign in" else "new here? create an account",
-            color = Color.Gray,
-            fontSize = 14.sp,
-            fontFamily = FontFamily.SansSerif,
-            fontWeight = FontWeight.Light,
-            modifier = Modifier
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { isSignUpMode = !isSignUpMode }
-                .padding(8.dp)
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
 
         Text(
             text = "skip for now",
