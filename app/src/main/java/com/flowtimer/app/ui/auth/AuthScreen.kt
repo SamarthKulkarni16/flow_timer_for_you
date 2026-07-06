@@ -128,30 +128,6 @@ private fun SignedOutContent(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        if (onBack != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-                horizontalArrangement = Arrangement.Start
-            ) {
-                Text(
-                    text = "back",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontFamily = FontFamily.SansSerif,
-                    fontWeight = FontWeight.Light,
-                    modifier = Modifier
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) { onBack() }
-                        .padding(8.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(32.dp))
-        }
-
         Text(
             text = "sign in",
             color = Color.White,
@@ -249,22 +225,6 @@ private fun SignedOutContent(
                     .padding(12.dp)
             )
         }
-
-        Spacer(modifier = Modifier.height(28.dp))
-
-        Text(
-            text = "skip for now",
-            color = Color.DarkGray,
-            fontSize = 14.sp,
-            fontFamily = FontFamily.SansSerif,
-            fontWeight = FontWeight.Light,
-            modifier = Modifier
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onSkip() }
-                .padding(8.dp)
-        )
     }
 }
 
@@ -295,10 +255,26 @@ private fun SignedInContent(
             fontWeight = FontWeight.Light
         )
         Spacer(modifier = Modifier.height(40.dp))
+        if (onBack != null) {
+            Text(
+                text = "back",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontFamily = FontFamily.SansSerif,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { onBack() }
+                    .padding(12.dp)
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+        }
         Text(
             text = "sign out",
-            color = Color.White,
-            fontSize = 16.sp,
+            color = Color.DarkGray,
+            fontSize = 14.sp,
             fontFamily = FontFamily.SansSerif,
             fontWeight = FontWeight.Light,
             modifier = Modifier
@@ -306,24 +282,8 @@ private fun SignedInContent(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) { onSignOut() }
-                .padding(12.dp)
+                .padding(8.dp)
         )
-        if (onBack != null) {
-            Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = "back",
-                color = Color.DarkGray,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.SansSerif,
-                fontWeight = FontWeight.Light,
-                modifier = Modifier
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) { onBack() }
-                    .padding(8.dp)
-            )
-        }
     }
 }
 

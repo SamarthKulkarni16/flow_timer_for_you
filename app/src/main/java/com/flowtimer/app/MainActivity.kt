@@ -314,7 +314,7 @@ class FlowTimerViewModel(
 
         // Light, brief buzz every time a task completes - whether tapped
         // manually or the time simply ran out.
-        FlowHapticManager.vibrate(500, 40)
+        FlowHapticManager.vibrate(500)
 
         val now = System.currentTimeMillis()
         val actualTaskDurationMillis = now - taskStartRealTimeMillis
@@ -554,23 +554,17 @@ fun HomeScreen(
         )
         }
 
-        Text(
-            text = "account",
-            color = Color.DarkGray,
-            fontSize = 14.sp,
-            fontFamily = FontFamily.SansSerif,
-            fontWeight = FontWeight.Light,
+        Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
+                .size(64.dp)
                 .testTag("account_button")
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    onAccountClicked()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = { onAccountClicked() }
+                    )
                 }
-                .padding(20.dp)
         )
     }
 }
