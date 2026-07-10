@@ -168,26 +168,33 @@ object FlowHapticManager {
     private var vibrator: Vibrator? = null
 
     fun initialize(context: Context) {
-        if (vibrator == null) {
-            val appCtx = context.applicationContext
-            vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = appCtx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-                vm?.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                appCtx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            }
+        val appCtx = context.applicationContext
+        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vm = appCtx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+            vm?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            appCtx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
     }
 
-    fun vibrate(durationMillis: Long, amplitude: Int = VibrationEffect.DEFAULT_AMPLITUDE) {
+    /**
+     * Fires a strong, unmistakable double-pulse buzz (buzz - short pause - buzz).
+     * Uses max amplitude explicitly (255) rather than DEFAULT_AMPLITUDE, since some
+     * OEM vibration drivers under-scale the default sentinel to something barely
+     * perceptible.
+     */
+    fun vibrate(durationMillis: Long = 350L) {
         val vib = vibrator ?: return
+        if (!vib.hasVibrator()) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vib.vibrate(VibrationEffect.createOneShot(durationMillis, amplitude))
+                val pattern = longArrayOf(0, durationMillis, 120, durationMillis)
+                val amplitudes = intArrayOf(0, 255, 0, 255)
+                vib.vibrate(VibrationEffect.createWaveform(pattern, amplitudes, -1))
             } else {
                 @Suppress("DEPRECATION")
-                vib.vibrate(durationMillis)
+                vib.vibrate(longArrayOf(0, durationMillis, 120, durationMillis), -1)
             }
         } catch (e: Exception) {
             // Gracefully catch any security, null pointer, or device-specific exception
@@ -314,7 +321,7 @@ class FlowTimerViewModel(
 
         // Light, brief buzz every time a task completes - whether tapped
         // manually or the time simply ran out.
-        FlowHapticManager.vibrate(500)
+        FlowHapticManager.vibrate()
 
         val now = System.currentTimeMillis()
         val actualTaskDurationMillis = now - taskStartRealTimeMillis
