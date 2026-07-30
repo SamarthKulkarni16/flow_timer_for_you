@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://samarthkulkarni16.github.io/flow_timer_for_you/sitemap.xml
